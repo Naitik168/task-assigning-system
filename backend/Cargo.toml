@@ -1,0 +1,70 @@
+[package]
+name = "task-manager-api"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+description = "Task management REST API with email 2FA, JWT, role-based access and per-user caching"
+publish = false
+
+[lib]
+name = "task_manager_api"
+path = "src/lib.rs"
+
+[[bin]]
+name = "task-manager-api"
+path = "src/main.rs"
+
+[dependencies]
+# Web
+axum = { version = "0.8", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+# Serialization / validation
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+validator = { version = "0.19", features = ["derive"] }
+
+# Persistence
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "postgres",
+    "uuid",
+    "chrono",
+    "migrate",
+    "macros",
+] }
+
+# Caching
+redis = { version = "0.27", default-features = false, features = ["tokio-comp", "connection-manager"] }
+moka = { version = "0.12", features = ["future"] }
+async-trait = "0.1"
+
+# Security
+argon2 = "0.5"
+jsonwebtoken = "9"
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+rand = "0.8"
+
+# Misc
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+anyhow = "1"
+dotenvy = "0.15"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# API docs
+utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+[profile.release]
+strip = true
+lto = "thin"

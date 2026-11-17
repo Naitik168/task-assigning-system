@@ -1,0 +1,117 @@
+# Full stack: PostgreSQL + Redis + Rust API + React frontend (nginx).
+#
+#   cp .env.example .env        # optional; every value has a default
+#   docker compose up -d --build
+#
+#   Frontend  http://localhost:3000
+#   API       http://localhost:8080      (Swagger UI: /docs)
+#
+# Tests (optional profile):
+#   docker compose --profile test run --rm backend-tests
+#   docker compose --profile test run --rm frontend-tests
+
+name: task-manager
+
+x-db-url: &db-url postgres://${POSTGRES_USER:-taskmgr}:${POSTGRES_PASSWORD:-taskmgr}@postgres:5432/${POSTGRES_DB:-taskmgr}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-taskmgr}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taskmgr}
+      POSTGRES_DB: ${POSTGRES_DB:-taskmgr}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      target: runtime
+    image: task-manager-backend:latest
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: *db-url
+      REDIS_URL: redis://redis:6379
+      RUN_MIGRATIONS: "true"
+      JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret-change-me-please-0123456789}
+      JWT_TTL_MINUTES: ${JWT_TTL_MINUTES:-60}
+      OTP_SECRET: ${OTP_SECRET:-dev-only-otp-secret-change-me-please-0123456789}
+      OTP_TTL_SECONDS: ${OTP_TTL_SECONDS:-300}
+      OTP_MAX_ATTEMPTS: ${OTP_MAX_ATTEMPTS:-5}
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-300}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-Admin@12345}
+      SEED_STAFF_PASSWORD: ${SEED_STAFF_PASSWORD:-Bond@007007}
+      RUST_LOG: ${RUST_LOG:-task_manager_api=info,tower_http=info}
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      target: runtime
+    image: task-manager-frontend:latest
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: http://backend:8080
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # ---------- test profile (not started by `docker compose up`) ----------
+  backend-tests:
+    profiles: ["test"]
+    build:
+      context: ./backend
+      target: test
+    environment:
+      # sqlx::test creates and drops an isolated database per test on this server.
+      DATABASE_URL: *db-url
+      TEST_REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend-tests:
+    profiles: ["test"]
+    build:
+      context: ./frontend
+      target: build
+    command: ["npm", "test"]
+
+volumes:
+  postgres-data:
+  redis-data:
